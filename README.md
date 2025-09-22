@@ -6,7 +6,7 @@ PyKen x Plutuscope is a toolkit for building Python-style Aiken smart contracts 
 
 ## Project structure
 
-- `Aiken Validators/` — Smart contracts written in Aiken.
+- `Aiken Validators/` — Smart contracts and Validators written in Aiken.
 - `PyKen/` — Transpilation framework (Python → Aiken).
 - `Plutuscope/` — Debugger, simulator, and trace explorer.
 - `docs/` — Extended project documentation and design notes.
