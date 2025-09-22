@@ -113,6 +113,43 @@ python plutuscope.py --aiken validators/ --simulate --verbose --instrument
 
 ---
 
+---
+
+## Smart Contract Code
+
+### Logic Overview
+
+The smart contracts in this project are written in **Aiken** (see `Aiken Validators/`).  
+They implement **validator scripts** that enforce rules on how UTXOs can be spent.
+
+- **Inputs**:  
+  - `datum` — on-chain data attached to UTXOs.  
+  - `redeemer` — data provided when spending a UTXO.  
+  - `tx context` — information about the spending transaction.  
+
+- **Outputs**:  
+  - New UTXOs locked by the validator or sent to user wallets.  
+  - Updated datums if the contract is stateful.  
+
+- **State Transitions**:  
+  - Validators check that the redeemer and transaction context satisfy the rules.  
+  - Example: enforcing reference inputs, spending authorization, or token transfers.
+
+### Security Considerations
+
+- Only authorized spending paths are validated.  
+- Written in Aiken, a strongly typed language, reducing risk of runtime errors.  
+- Unit tests (via `aiken check` + Plutuscope simulations) catch logical errors early.  
+- Trace explorer highlights failed branches, making it easier to detect vulnerabilities.
+
+### Off-chain Components
+
+- **PyKen** — Developers write Python-style validators that transpile into Aiken.  
+- **Plutuscope** — Simulate and narrate validators for debugging.  
+- **Examples** — Found in `PyKen/Examples/`, showing off-chain → on-chain interaction flows.
+
+---
+
 ## Documentation
 
 [PyKen x Plutuscope Documentation](docs/PyKen_x_Plutuscope_Documentation.pdf)
