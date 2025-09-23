@@ -150,6 +150,49 @@ They implement **validator scripts** that enforce rules on how UTXOs can be spen
 
 ---
 
+## Deployment Instructions
+
+### Prerequisites
+
+- Install [Aiken](https://aiken-lang.org)  
+- Install Python 3.10+  
+- Install Python dependencies:
+
+  ```bash
+  pip install -r requirements.txt
+  ```
+
+Note: The project uses the [Rich](https://github.com/Textualize/rich) library for colored CLI output.
+
+Local Testing & Simulation
+
+- Compile Smart Contracts
+
+```bash
+aiken build
+```
+
+Run Static Checks
+
+```bash
+aiken check
+```
+
+Simulate & Debug with Plutuscope
+
+```bash
+# Narrate and simulate a single validator
+python plutuscope.py --aiken "Aiken Validators/my_validator.ak" --simulate
+
+# Scan and instrument all validators with verbose debugging
+python plutuscope.py --scan "Aiken Validators"
+
+python plutuscope.py --aiken "Aiken Validators/" --simulate --verbose --instrument
+
+```
+
+---
+
 ## Documentation
 
 [PyKen x Plutuscope Documentation](docs/PyKen_x_Plutuscope_Documentation.pdf)
@@ -165,3 +208,12 @@ This project is early-stage and welcomes contributions. Please open issues for b
 ## License
 
 [LICENSE](LICENSE)
+
+---
+
+## Demo Video
+
+A walkthrough video (max 5 minutes) demonstrating project functionality will be uploaded here.  
+[Demo Video Link – Coming Soon]
+
+[Repository](https://github.com/BlockGov/PyKen-x-Plutuscope)

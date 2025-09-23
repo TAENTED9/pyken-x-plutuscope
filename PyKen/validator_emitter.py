@@ -349,9 +349,17 @@ class ValidatorEmitter(ast.NodeVisitor):
             test_name = node.name[5:] if node.name.startswith("test_") else node.name
             self.write(f"test {test_name} {{")
             self.push()
+            # mark we are inside a test and start fresh name mapping for this test
+            prev_in_test = getattr(self, "in_test", False)
+            prev_name_map = getattr(self, "name_map", None)
+            self.in_test = True
+            self.name_map = {}
             for stmt in node.body:
                 if not self._is_docstring(stmt):
                     self.visit(stmt)
+            # restore previous flags (safety)
+            self.in_test = prev_in_test
+            self.name_map = prev_name_map
             self.pop()
             self.write("}")
             return
@@ -399,7 +407,32 @@ class ValidatorEmitter(ast.NodeVisitor):
         if isinstance(target, ast.Name):
             name = target.id
 
-            # If RHS is an ast.Call with a CamelCase callee -> constructor destructure
+            # --- TEST: special-case x = <container>.inputs[...] or .outputs[...] -> expect [x] = <container>.inputs
+            if getattr(self, "in_test", False) and isinstance(node.value, ast.Subscript):
+                base = node.value.value  # e.g. tx.inputs
+                # detect attr base like tx.inputs or tx.outputs
+                if isinstance(base, ast.Attribute) and isinstance(base.attr, str) and base.attr in ("inputs", "outputs"):
+                    base_expr = self._expr(base)  # should produce "tx.inputs"
+                    norm = self._normalize_element_name(name)
+                    # record name mapping for future references inside this test
+                    if norm != name:
+                        if not hasattr(self, "name_map") or self.name_map is None:
+                            self.name_map = {}
+                        self.name_map[name] = norm
+                    self.write(f"expect [{norm}] = {base_expr}")
+                    return
+                # fallback: if textual base ends with '.inputs' or '.outputs', handle it too
+                base_text = self._expr(base)
+                if base_text.endswith(".inputs") or base_text.endswith(".outputs"):
+                    norm = self._normalize_element_name(name)
+                    if norm != name:
+                        if not hasattr(self, "name_map") or self.name_map is None:
+                            self.name_map = {}
+                        self.name_map[name] = norm
+                    self.write(f"expect [{norm}] = {base_text}")
+                    return
+
+            # If RHS is an ast.Call with a CamelCase callee -> prefer constructor assignment
             if isinstance(node.value, ast.Call):
                 callee = node.value.func
                 short_name = None
@@ -407,34 +440,47 @@ class ValidatorEmitter(ast.NodeVisitor):
                     short_name = callee.id
                 elif isinstance(callee, ast.Attribute):
                     short_name = callee.attr
+
                 if short_name and _is_camel(short_name):
-                    # Look up actual fields we recorded for this type
-                    fields = self.type_fields.get(short_name)
-                    if fields:
-                        # Multi-line, pretty destructure
-                        self.write(f"let {short_name} {{")
-                        self.push()
-                        for i, f in enumerate(fields):
-                            # trailing commas like your example
-                            self.write(f"{f},")
-                        self.pop()
-                        self.write(f"}} = {name}")
-                    else:
-                        # fallback to placeholder
-                        self.write(f"let {short_name} {{ .. }} = {name}")
+                    # CASE: LHS is a CamelCase name -> user intends pattern/destructure
+                    if _is_camel(name):
+                        fields = self.type_fields.get(short_name)
+                        if fields:
+                            self.write(f"let {short_name} {{")
+                            self.push()
+                            for f in fields:
+                                self.write(f"{f},")
+                            self.pop()
+                            self.write(f"}} = {name}")
+                        else:
+                            self.write(f"let {short_name} {{ .. }} = {name}")
+                        return
+
+                    # CASE: LHS is normal variable -> prefer `let name = Constructor { ... }` or `let name = Constructor(...)`
+                    if node.value.keywords:
+                        fields_pairs = []
+                        for kw in node.value.keywords:
+                            fields_pairs.append(f"{kw.arg}: {self._expr(kw.value)}")
+                        record = f"{short_name} {{ {', '.join(fields_pairs)} }}"
+                        self.write(f"let {name} = {record}")
+                        return
+                    val = self._expr(node.value)
+                    self.write(f"let {name} = {val}")
                     return
 
             # fallback to textual expression
             val = self._expr(node.value)
 
-            if val.startswith("Datum(") or val.startswith("Data("):
-                # special case: Datum(...) or Data(...) -> destructure
+            if isinstance(val, str) and (val.startswith("Datum(") or val.startswith("Data(")):
+                # special case: Datum(.) or Data(.) -> destructure
                 self.write(f"let Some(Datum {name}) = {val}")
             else:
                 self.write(f"let {name} = {val}")
         else:
             # unsupported target form
             pass
+
+
 
 
     def visit_AnnAssign(self, node: ast.AnnAssign):
@@ -576,6 +622,23 @@ class ValidatorEmitter(ast.NodeVisitor):
         self.write("}")
 
     # ----- helpers for pattern-matching detection -----
+    def _normalize_element_name(self, name: str) -> str:
+        """
+        Normalize names used for pattern extracts in tests.
+        e.g. input_item -> input, output_item -> output
+        This is conservative: only common suffixes are stripped.
+        """
+        if name.endswith("_item"):
+            return name[:-5]
+        for suff in ("_input", "_output"):
+            if name.endswith(suff):
+                return name[: -len(suff)]
+        # naive singularization for plural forms like 'inputs' -> 'input'
+        if name.endswith("s") and len(name) > 1:
+            return name[:-1]
+        return name
+
+
     def _collect_if_chain(self, node: ast.If) -> Tuple[List[Tuple[ast.expr, List[ast.stmt]]], List[ast.stmt]]:
         chain = []
         cur = node
@@ -666,66 +729,116 @@ class ValidatorEmitter(ast.NodeVisitor):
 
     # ----- expression serializer (big) -----
     def _expr(self, node: ast.AST) -> str:
+        """
+        Serialize Python AST expression node into Aiken text.
+        Special name/constructor handling:
+        - Python None -> "None"
+        - names/vars: 'datum', '_datum', 'data' -> "None"
+        - names/vars: 'redeemer', '_redeemer' -> "Void"
+        - constructors/callees: 'Datum' or 'Data' -> "None"
+        - constructors/callees: 'Redeemer' -> "Void"
+        Also: bytes/bytearray constants emit as string literals (decode utf-8).
+        """
+        # ----- constants -----
         if isinstance(node, ast.Constant):
             val = node.value
             if val is True:
                 return "True"
             if val is False:
                 return "False"
+            # Map bytes -> string literal (remove b-prefix).
+            if isinstance(val, (bytes, bytearray)):
+                try:
+                    s = val.decode("utf-8")
+                except Exception:
+                    # fall back to repr if decode fails
+                    s = repr(val)
+                    return s
+                return _str_literal(s)
+            # Always map Python None -> Aiken None (baseline)
             if val is None:
-                return "Void"
+                return "None"
             if isinstance(val, str):
                 return _str_literal(val)
             return repr(val)
 
+        # ----- names (variables / simple ids) -----
         if isinstance(node, ast.Name):
-            # CamelCase names likely constructors/variants
-            if _is_camel(node.id):
-                return node.id
-            return node.id
+            name = node.id
 
+            # specific name-level rules requested
+            if name in ("_datum", "datum", "data"):
+                return "None"
+            if name in ("_redeemer", "redeemer"):
+                return "Void"
+
+            # test-scoped renames (input_item -> input)
+            if getattr(self, "name_map", None) and name in self.name_map:
+                return self.name_map[name]
+
+            # CamelCase names likely constructors/variants
+            if _is_camel(name):
+                return name
+            return name
+
+        # ----- attribute access (obj.attr) -----
         if isinstance(node, ast.Attribute):
             # map else_ attribute to ".else"
             if node.attr == "else_":
                 return f"{self._expr(node.value)}.else"
+
+            # attribute-level special mapping (e.g., obj._datum)
+            if node.attr in ("_datum", "datum", "data"):
+                return "None"
+            if node.attr in ("_redeemer", "redeemer"):
+                return "Void"
+
             # If attribute name is CamelCase, prefer the constructor name alone
             if _is_camel(node.attr):
                 return node.attr
+
             return f"{self._expr(node.value)}.{node.attr}"
 
+        # ----- function / constructor calls -----
         if isinstance(node, ast.Call):
             func_node = node.func
+
+            # detect simple callee name when possible
             func_name = None
             if isinstance(func_node, ast.Name):
                 func_name = func_node.id
             elif isinstance(func_node, ast.Attribute):
-                func_name = self._expr(func_node)
+                # attribute callees like mod.Constructor -> attr part
+                func_name = func_node.attr if isinstance(func_node.attr, str) else None
 
-            # ----Option Handling ---
+            # callee-level rules
+            if func_name in ("Datum", "Data"):
+                return "None"
+            if func_name == "Redeemer":
+                return "Void"
+
+            # Option handling
             if func_name == "Some":
                 inner = ", ".join(self._expr(a) for a in node.args)
                 return f"Some({inner})"
             if func_name == "None":
                 return "None"
 
-            # special-case: placeholder() -> placeholder (no parens)
+            # special-case: placeholder() -> placeholder
             if isinstance(func_node, ast.Name) and func_node.id == "placeholder" and not node.args and not node.keywords:
                 return "placeholder"
 
-            # compute textual form of the callee (safe)
+            # build callee textual representation
             callee_text = self._expr(func_node)
 
             # constructor-like: callee name is CamelCase
             short_name = callee_text.split(".")[-1]
             if _is_camel(short_name):
-                # no args -> bare constructor
                 if not node.args and not node.keywords:
                     return short_name
-                # keywords -> record-style
                 if node.keywords:
                     fields = [f"{kw.arg}: {self._expr(kw.value)}" for kw in node.keywords]
                     return f"{short_name} {{ {', '.join(fields)} }}"
-                # positional args -> call-like constructor
                 args_inner = ", ".join(self._expr(a) for a in node.args)
                 return f"{short_name}({args_inner})"
 
@@ -734,23 +847,14 @@ class ValidatorEmitter(ast.NodeVisitor):
                 if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
                     return f'trace @{_str_literal(node.args[0].value)}'
 
-            # Generic call: map Python None (represented as "Void") for first arg -> "None"
-            args_list = []
-            for idx, a in enumerate(node.args):
-                a_s = self._expr(a)
-                if a_s == "Void":
-                    # context-sensitive: first positional argument often indicates datum -> None
-                    if idx == 0:
-                        args_list.append("None")
-                    else:
-                        args_list.append("Void")
-                else:
-                    args_list.append(a_s)
+            # Generic call: simple mapping of args & kwargs
+            args_list = [self._expr(a) for a in node.args]
             kwargs = ", ".join(f"{kw.arg}={self._expr(kw.value)}" for kw in node.keywords)
             joined = ", ".join(p for p in (", ".join(args_list), kwargs) if p)
 
             return f"{callee_text}({joined})"
 
+        # ----- binary / boolean / unary / compare etc. -----
         if isinstance(node, ast.BinOp):
             left = self._expr(node.left)
             right = self._expr(node.right)
@@ -763,7 +867,6 @@ class ValidatorEmitter(ast.NodeVisitor):
 
         if isinstance(node, ast.UnaryOp):
             if isinstance(node.op, ast.Not):
-                # use "!" for negation in emitted Aiken
                 return f"!{self._expr(node.operand)}"
             if isinstance(node.op, ast.USub):
                 return f"-{self._expr(node.operand)}"
@@ -808,6 +911,8 @@ class ValidatorEmitter(ast.NodeVisitor):
 
         # fallback
         return "<expr>"
+
+
 
 
     def _binop(self, op):

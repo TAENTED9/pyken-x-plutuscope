@@ -3,7 +3,7 @@ from pathlib import Path
 from validator_emitter import emit_aiken_from_source
 
 # Source Python file
-SRC_FILE = r"C:\Users\USER\Desktop\PyKen Validators\module 103\l0-mock-tx.py"
+SRC_FILE = r"C:\Users\USER\Desktop\PyKen x Plutuscope\PyKen\Examples\Pymodule 103\l2_mock_minting_tx.py"
 
 # Read source
 src = Path(SRC_FILE).read_text(encoding="utf-8")
