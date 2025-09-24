@@ -213,7 +213,5 @@ This project is early-stage and welcomes contributions. Please open issues for b
 
 ## Demo Video
 
-A walkthrough video (max 5 minutes) demonstrating project functionality will be uploaded here.  
-[Demo Video Link – Coming Soon]
-
-[Repository](https://github.com/BlockGov/PyKen-x-Plutuscope)
+A walkthrough video (max 5 minutes) demonstrating project functionality uploaded here.  
+[Demo Video Link](https://youtu.be/6sLktjBTClY)
