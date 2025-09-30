@@ -104,7 +104,7 @@ def infer_param_type_from_body(param_name: str, func_body) -> str:
     # wrap in an AST Module for ast.walk
     module = ast.Module(body=func_body, type_ignores=[])
     for node in ast.walk(module):
-        # If param used as a boolean condition: `if flag:` or in BoolOp
+        # If param used as a boolean condition: 'if flag:' or in BoolOp
         if isinstance(node, ast.If):
             t = node.test
             if isinstance(t, ast.Name) and t.id == param_name:
@@ -293,7 +293,6 @@ def emit_function(func, annotations=None) -> str:
                 param_types[name] = inferred
                 continue
 
-        # heuristic from body usage
         inferred = infer_param_type_from_body(name, func["body"])
         param_types[name] = inferred
 
@@ -354,7 +353,7 @@ def emit_function(func, annotations=None) -> str:
             else:
                 body_lines.append(f"    {cond} -> /* no result */")
 
-            # handle elif/else (flatten chain)
+            # handle elif/else
             if len(stmt.orelse) == 1 and isinstance(stmt.orelse[0], ast.If):
                 current = stmt.orelse[0]
                 while isinstance(current, ast.If):
@@ -411,7 +410,7 @@ def emit_function(func, annotations=None) -> str:
             else:
                 body_lines.append("  /* return */")
         else:
-            # For unsupported statements we include a comment to help debugging
+            # Unsupported statements include a comment to help debugging
             body_lines.append(f"  // Unsupported statement: {type(stmt).__name__}")
 
     # 6) Assemble function text

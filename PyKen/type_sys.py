@@ -25,7 +25,7 @@ PY_TO_AIKEN = {
     "Redeemer": "Data",
     "Context": "ScriptContext",
 
-    # Cardano-specific (from your stdlib mirror)
+    # Cardano-specific (from stdlib mirror)
     "PolicyId": "PolicyId",
     "Value": "Value",
     "Address": "Address",

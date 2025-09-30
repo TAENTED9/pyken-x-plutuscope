@@ -7,6 +7,8 @@ from mocktail import (
     invalid_hereafter,
     mock_utxo_ref,
     mocktail_tx,
+    tx_in,
+    tx_out,
 )
 
 # -------------------------------
@@ -52,12 +54,11 @@ class TestCase:
         self.is_tx_after_valid_lower_bound = is_tx_after_valid_lower_bound
 
 def mock_tx(test_case: TestCase) -> Transaction:
-    return (
-        mocktail_tx()
-        .pipe(invalid_hereafter, test_case.is_tx_before_valid_upper_bound, 199)
-        .pipe(invalid_before, test_case.is_tx_after_valid_lower_bound, 101)
-        .pipe(complete)
-    )
+    tx = mocktail_tx()
+    tx = tx_in(invalid_hereafter, test_case.is_tx_before_valid_upper_bound, 199)
+    tx = tx_out(invalid_before, test_case.is_tx_after_valid_lower_bound, 101)
+    tx = complete(tx)
+    return tx
 
 # -------------------------------
 # Tests

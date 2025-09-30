@@ -17,7 +17,7 @@ class always_succeed:
         return True
 
     @staticmethod
-    def else_(context: ScriptContext) -> None:
+    def else_() -> None:
         raise Exception("fail")
 
 

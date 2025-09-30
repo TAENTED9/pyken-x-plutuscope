@@ -4,7 +4,7 @@ from typing import Optional, Union, Dict, Any
 
 
 # ---- simple aliases for external/complex types ----
-# In your real app, replace these with real structures.
+# In real app, replace these with real structures.
 StakePoolId = str  # Hash<Blake2b_224, VerificationKey> (hex string)
 VerificationKeyHash = str  # hex string
 Credential = Dict[str, Any]  # placeholder: e.g. {"type": "KeyHash", "hash": "..."}

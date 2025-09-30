@@ -8,19 +8,18 @@ from type_sys import map_type, PY_TO_AIKEN
 
 
 # ---------------------------
-# Helpers & small config
+# Helpers
 # ---------------------------
 def _is_camel(name: str) -> bool:
     return bool(name) and name[0].isupper()
 
 
 def _str_literal(value: str) -> str:
-    # emit double-quoted string (safe escaping)
     return json.dumps(value)
 
 
 # ---------------------------
-# DataType marker (engine side)
+# DataType marker
 # ---------------------------
 class DataType:
     """Engine-side base for data holder classes (not emitted as import)."""
@@ -36,10 +35,9 @@ class ValidatorEmitter(ast.NodeVisitor):
     def __init__(self):
         self.output: List[str] = []
         self.indent_level = 0
-        # map type name -> list of field names (collected from class __init__)
+        # map type name -> list of field names
         self.type_fields = {}
 
-    # ----- low-level output -----
     def write(self, line: str = ""):
         self.output.append(("  " * self.indent_level) + line)
 
@@ -61,9 +59,7 @@ class ValidatorEmitter(ast.NodeVisitor):
     # ----- entrypoint -----
     def visit_Module(self, node: ast.Module):
         for stmt in node.body:
-            # skip common engine-only guards
             if isinstance(stmt, ast.If):
-                # skip `if __name__ == "__main__":` blocks entirely
                 if (isinstance(stmt.test, ast.Compare)
                         and isinstance(stmt.test.left, ast.Name)
                         and stmt.test.left.id == "__name__"):
@@ -74,7 +70,6 @@ class ValidatorEmitter(ast.NodeVisitor):
     # -----  imports -----
     def visit_Import(self, node: ast.Import):
         for alias in node.names:
-            # example: import aiken.builtin as builtin
             mod = alias.name.replace(".", "/")
             if alias.asname:
                 self.write(f"use {mod} as {alias.asname}")
@@ -93,7 +88,6 @@ class ValidatorEmitter(ast.NodeVisitor):
                 names.append(f"{alias.name} as {alias.asname}")
             else:
                 names.append(alias.name)
-        # always use brace form for consistency
         self.write(f"use {mod}.{{{', '.join(names)}}}")
         return
 
@@ -101,7 +95,7 @@ class ValidatorEmitter(ast.NodeVisitor):
 
     # ----- classes: either validator or pub type -----
     def visit_ClassDef(self, node: ast.ClassDef):
-        # determine if this is a validator class (contains 'spend'/'mint'/'else_')
+        # determines if validator class contains 'spend'/'mint'/'else_'
         method_names = {n.name for n in node.body if isinstance(n, ast.FunctionDef)}
         is_validator = any(n in method_names for n in ("spend", "mint", "else_"))
 
@@ -114,17 +108,17 @@ class ValidatorEmitter(ast.NodeVisitor):
                 if isinstance(stmt, ast.FunctionDef):
                     self._emit_validator_method(stmt)
                 else:
-                    # ignore non-methods (class-level attrs) for validators
+                    # ignore non-methods for validators
                     pass
             self.pop()
             self.write("}")
             # validators don't produce pub types, so no fields to record
             self.type_fields[node.name] = []
         else:
-            # Emit plain internal 'type' (not pub) for data helpers
+            # Emit 'pub type' for data helpers
             self.write(f"pub type {node.name} {{")
             self.push()
-            # Try to find __init__ to extract field names (use annotations if present)
+            # Try to find __init__ to extract field names
             init = None
             for stmt in node.body:
                 if isinstance(stmt, ast.FunctionDef) and stmt.name == "__init__":
@@ -139,12 +133,12 @@ class ValidatorEmitter(ast.NodeVisitor):
                         # try to pick up annotation -> map it, fallback to Data
                         ann = None
                         if getattr(a, "annotation", None):
-                            # use a robust extraction if you added _annotation_name helper
+                            # use a robust extraction if added _annotation_name helper is added
                             ann = getattr(a.annotation, "id", None) or getattr(a.annotation, "attr", None)
                         if ann:
                             a_type = map_type(ann)
                         else:
-                            # heuristic: boolean-named fields (is_*) often bools
+                            # boolean-named fields
                             if a.arg.startswith("is_"):
                                 a_type = "Bool"
                             else:
@@ -155,7 +149,7 @@ class ValidatorEmitter(ast.NodeVisitor):
                     # no fields -> simple constructor
                     self.write(f"{node.name}")
             else:
-                # no __init__ -> simple constructor (variant)
+                # no __init__ -> simple constructor
                 self.write(f"{node.name}")
             self.pop()
             self.write("}")
@@ -168,14 +162,8 @@ class ValidatorEmitter(ast.NodeVisitor):
     def _pipeline_segment_from_rhs(self, rhs: ast.AST, var_name: str):
         """
         Given an RHS AST (an expression assigned to the tracked variable),
-        return a string representing the pipeline segment (e.g. "fn(a, b)")
-        or None if this RHS can't be represented as a pipeline step.
-
-        Supported (in precedence order):
-        A) tx.pipe(fn, a, b)      -> "fn(a, b)"
-        B) fn(tx, a, b)           -> "fn(a, b)"   (first arg is var)
-        C) tx.method(a, b)        -> "method(a, b)"
-        D) fn(..., tx, ...)       -> "fn(other_args...)"  (var appears anywhere)
+        return a string representing the pipeline segment or None if this 
+        RHS can't be represented as a pipeline step.
         """
         if not isinstance(rhs, ast.Call):
             return None
@@ -207,7 +195,7 @@ class ValidatorEmitter(ast.NodeVisitor):
             return f"{method_name}({joined})" if joined else f"{method_name}()"
 
         # case D: permissive - var appears in any positional or keyword arg
-        # detect occurrences of `var_name` (as Name or as Attribute whose value is Name(var_name))
+        # detect occurrences of 'var_name' (as Name or as Attribute whose value is Name(var_name))
         found_var = False
         pos_args = []
         for a in rhs.args:
@@ -301,7 +289,7 @@ class ValidatorEmitter(ast.NodeVisitor):
         base_assign = assigns[0]
         base_expr_ast = base_assign.value
 
-        # single assignment case: `x = f(...); return x` -> no segments
+        # single assignment case: 'x = f(...); return x' -> no segments
         if len(assigns) == 1:
             return (i + 1, assigns, base_expr_ast, [])
 
@@ -368,9 +356,9 @@ class ValidatorEmitter(ast.NodeVisitor):
         pipeline = self._try_emit_pipeline(node.body)
         args = [a.arg for a in node.args.args]
         args_sig = ", ".join(args)
-        # optional: detect return annotation (if you track types elsewhere)
+        # optional: detect return annotation (if track types elsewhere)
         ret_annotation = ""
-        # emit function signature (no hardcoded types)
+        # emit function signature
         self.write(f"fn {node.name}({args_sig}){(' -> ' + node.returns.id) if getattr(node, 'returns', None) and hasattr(node.returns, 'id') else ''} {{")
         self.push()
 
@@ -456,7 +444,7 @@ class ValidatorEmitter(ast.NodeVisitor):
                             self.write(f"let {short_name} {{ .. }} = {name}")
                         return
 
-                    # CASE: LHS is normal variable -> prefer `let name = Constructor { ... }` or `let name = Constructor(...)`
+                    # CASE: LHS is normal variable -> prefer 'let name = Constructor { ... }' or 'let name = Constructor(...)'
                     if node.value.keywords:
                         fields_pairs = []
                         for kw in node.value.keywords:
@@ -525,13 +513,13 @@ class ValidatorEmitter(ast.NodeVisitor):
             self.push()
             for test, body in chain:
                 variants = self._pattern_variants_from_test(test)
-                # bodies must be single return statements (we checked)
+                # bodies must be single return statements
                 ret_expr = self._extract_single_return_expr(body)
                 for variant in variants:
                     self.write(f"{variant} -> {ret_expr}")
             # final else
             if final_else:
-                # final_else is a list of stmts. We support single-return else.
+                # final_else is a list of stmts. Support single-return else.
                 if len(final_else) == 1 and isinstance(final_else[0], ast.Return):
                     else_expr = self._expr(final_else[0].value)
                 else:
@@ -592,7 +580,7 @@ class ValidatorEmitter(ast.NodeVisitor):
             self.write("}")
             return
         
-        # Build typed argument list (best-effort from annotations + name heuristics)
+        # Build typed argument list
         args_parts = []
         for a in func.args.args:
             if a.arg == "_":
@@ -653,10 +641,12 @@ class ValidatorEmitter(ast.NodeVisitor):
         return chain, final_else
 
     def _chain_is_pattern_match(self, chain: List[Tuple[ast.expr, List[ast.stmt]]]) -> bool:
-        # We only transform into 'when' if:
-        #  - each test is either isinstance(var, Type) OR var in (A,B,...)
-        #  - all tests reference same var name
-        #  - each body is a single Return
+        '''
+        Only transform into 'when' if:
+          - each test is either isinstance(var, Type) OR var in (A,B,...)
+          - all tests reference same var name
+          - each body is a single Return
+        '''
         if not chain:
             return False
         var_name = None
@@ -686,7 +676,7 @@ class ValidatorEmitter(ast.NodeVisitor):
     def _pattern_variants_from_test(self, test: ast.expr) -> List[str]:
         res = []
         if isinstance(test, ast.Call) and isinstance(test.func, ast.Name) and test.func.id == "isinstance":
-            # typeof second arg can be Name or Tuple of Names
+            # type of second arg can be Name or Tuple of Names
             if len(test.args) >= 2:
                 t = test.args[1]
                 if isinstance(t, ast.Name):

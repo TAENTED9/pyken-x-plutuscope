@@ -9,6 +9,8 @@ from mocktail import (
     mock_utxo_ref,
     mocktail_tx,
     ref_tx_in,
+    tx_in,
+    tx_out,
 )
 
 # -------------------------------
@@ -37,13 +39,12 @@ class TestCase:
         self.is_multiple_ref_inputs = is_multiple_ref_inputs
 
 def mock_tx(test_case: TestCase) -> Transaction:
-    return (
-        mocktail_tx()
-        .pipe(ref_tx_in, test_case.is_ref_input_present, mock_tx_hash(0), 1, from_lovelace(1_000_000), mock_pub_key_address(0, None))
-        .pipe(ref_tx_in, test_case.is_multiple_ref_inputs, mock_tx_hash(0), 2, from_lovelace(5_000_000), mock_pub_key_address(0, None))
-        .pipe(ref_tx_in, test_case.is_multiple_ref_inputs, mock_tx_hash(0), 3, from_lovelace(3_000_000), mock_pub_key_address(0, None))
-        .pipe(complete)
-    )
+    tx = mocktail_tx()
+    tx = tx.pipe(ref_tx_in, test_case.is_ref_input_present, mock_tx_hash(0), 1, from_lovelace(1_000_000), mock_pub_key_address(0, None))
+    tx = tx.pipe(ref_tx_in, test_case.is_multiple_ref_inputs, mock_tx_hash(0), 2, from_lovelace(5_000_000), mock_pub_key_address(0, None))
+    tx = tx.pipe(ref_tx_in, test_case.is_multiple_ref_inputs, mock_tx_hash(0), 3, from_lovelace(3_000_000), mock_pub_key_address(0, None))
+    tx = tx.pipe(complete)
+    return tx
 
 # -------------------------------
 # Tests

@@ -37,7 +37,7 @@ class ScriptContext:
         self.info = info
 
 
-# 👇 Export Aiken-style names directly for compatibility
+# Export Aiken-style names directly for compatibility
 Minting = ScriptInfo.Minting
 Spending = ScriptInfo.Spending
 Withdrawing = ScriptInfo.Withdrawing

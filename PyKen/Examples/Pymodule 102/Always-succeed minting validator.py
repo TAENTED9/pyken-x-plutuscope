@@ -19,5 +19,5 @@ class always_succeed:
 # --- Tests ---
 
 def test_m102_always_succeed_minting_policy():
-    # just call the validator with Void (None), empty policy, and placeholder tx
+    # just call the validator with Void, empty policy, and placeholder tx
     always_succeed.mint(None, "", placeholder())

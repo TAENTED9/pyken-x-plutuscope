@@ -32,7 +32,7 @@ _project_tests_cache: Optional[List[Dict[str, Any]]] = None
 _project_tests_cache_root: Optional[Path] = None
 
 # ======================================================================
-# === TRACE + SCAN MODE (from plutuscope_cli.py) - improved
+# === TRACE + SCAN MODE
 # ======================================================================
 
 TRACE_RE = re.compile(r'^\s*\[TRACE\]\s*(.*)$', re.I)
@@ -412,7 +412,7 @@ def run_aiken_and_collect(project_dir: Path, instrument: bool=False, verbose: bo
                 pass
 
 # ======================================================================
-# === Instrumentation helper (temporary copy + trace insertion)
+# === Instrumentation helper
 # ======================================================================
 
 def _instrument_project_for_traces(project_dir: Path, verbose: bool=False) -> Optional[Path]:
@@ -446,7 +446,7 @@ def _instrument_project_for_traces(project_dir: Path, verbose: bool=False) -> Op
                     idx = len(text)
                     break
                 fname = m.group(2)
-                # insert entry and exit traces (best-effort)
+                # insert entry and exit traces
                 instrumented = '\ntrace("enter {}");\n'.format(fname) + body + '\ntrace("exit {}");\n'.format(fname)
                 new_parts.append(instrumented)
                 idx = end_idx + 1
@@ -582,7 +582,7 @@ def _find_function_project_wide(project_root: Path, fname: str, exclude_path: Op
 def analyze_files(paths: List[Path], prefer_aiken: bool = True, instrument: bool=False, verbose: bool=False):
     """
     Scan the given paths. Expensive operations (aiken runs, instrumentation) are
-    cached per project directory so we don't repeat them for every file.
+    cached per project directory so they don't get repeated them for every file.
     """
     results = []
     # cache per project dir (and instrument/prefer_aiken flags) -> collected dict
@@ -703,7 +703,7 @@ def interactive_browser(results):
                 console.print(colored)
 
 # ======================================================================
-# === NARRATION + SIMULATION MODE (kept simple)
+# === NARRATION + SIMULATION MODE (simple as possible)
 # ======================================================================
 
 def _find_functions_in_text(text: str) -> List[Tuple[str, str, str]]:
